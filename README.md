@@ -1,233 +1,180 @@
-# # TascamBridge — User Manual
+# TascamBridge
 
-Version 1.0 · https://github.com/Xorpereira/TascamBridge
+A native macOS app that bridges OSC commands to TASCAM SS-R250N and HD-R1
+recorders over Telnet. Designed for live show control from QLab, Resolume,
+or any OSC-capable application.
 
-## What This App Does
+## Overview
 
-TascamBridge lets you control TASCAM SS-R250N and HD-R1 recorders from
-any application that can send OSC — most commonly QLab, but also
-Resolume, TouchOSC, or a simple script. You configure each recorder
-once, and from then on you trigger play, stop, and track changes by
-sending OSC messages.
+TascamBridge listens for OSC messages on a UDP port and translates them
+into the Telnet command language understood by TASCAM network-connected
+recorders. Multiple recorders can be controlled simultaneously, each with
+its own connection, device type, and OSC namespace.
 
-## First-Time Setup
+## Features
 
-### 1. Prepare the Recorder
+- Controls **TASCAM SS-R250N** and **HD-R1** over Ethernet
+- Accepts OSC messages from any sender (QLab, Resolume, TouchOSC, scripts)
+- Multiple players, mixed device types, one shared OSC port
+- Each player addressable by position (`/player1/...`) or by name
+  (`/main/...`), case-insensitive
+- Typed OSC arguments (integers, floats, strings) via SwiftOSC
+- Automatic keep-alive to prevent idle Telnet disconnects
+- Auto-reconnect with exponential backoff on unexpected drops
+- Menu bar icon showing aggregate connection state
+- Persistent configuration across launches
+- Shared log pane for diagnostics
 
-Before using TascamBridge, the recorder must be reachable over the
-network.
+## Requirements
 
-1. Connect the recorder to your network via its Ethernet port.
-2. On the recorder, note its IP address (usually shown in the menu
-   under network or system settings).
-3. Confirm the recorder is set to accept Telnet control (this is
-   usually enabled by default).
-4. For the SS-R250N: update firmware to V2.17 or later for the most
-   reliable connection behaviour.
+### To run TascamBridge
 
-### 2. Launch TascamBridge
+- **macOS 14 (Sonoma) or later**
+- Network connection to the recorder(s) over Ethernet
+- TASCAM SS-R250N firmware V2.15+ (V2.17+ recommended)
+- TASCAM HD-R1 with the standard serial protocol firmware
 
-The app opens to a single window with one player card, a shared log
-pane below, and an OSC port field at the top.
+### To build TascamBridge from source
 
-The app also places an icon in the menu bar. The icon is **red** when
-no players are connected and **green** when all configured players are
-connected.
+- macOS 14 (Sonoma) or later
+- **Xcode 16 or later**
+- SwiftOSC package (resolved automatically via Swift Package Manager)
 
-### 3. Configure the First Player
+### Why macOS 14
 
-Each player card represents one recorder.
+The app relies on several APIs introduced in macOS 14:
 
-1. **Name** — Click the name at the top of the card to rename it
-   (e.g. `main`, `backup`, `dialog`). Names must be a single word,
-   no spaces, no slashes, and must be unique.
-2. **Device** — Choose `SS-R250N` or `HD-R1`.
-3. **IP** — Enter the recorder's IP address.
-4. **Port** — Leave as `23` unless you've changed the recorder's
-   Telnet port.
-5. Click **Connect**. The status dot next to the name turns green and
-   the shared log shows the connection sequence.
+- `MenuBarExtra` with modern scene configuration
+- `@Observable` macro (Swift Observation framework)
+- `@Bindable` property wrapper in SwiftUI views
 
-### 4. Add More Players
+Lowering the deployment target would require replacing these with
+`ObservableObject` / `@Published` and an `NSStatusItem`-based menu bar.
 
-Click **Add Player** at the top of the window. A new card appears with
-its own name, IP, port, and device type. Repeat the configuration
-steps above.
+## Building
 
-Players can be mixed freely — for example, one SS-R250N and one HD-R1
-in the same show.
+1. Clone the repository:
+   ```
+   git clone https://github.com/Xorpereira/TascamBridge.git
+   cd TascamBridge
+   ```
+2. Open `TascamBridge.xcodeproj` in Xcode.
+3. Add the SwiftOSC package if not already resolved:
+   - File → Add Package Dependencies
+   - URL: `https://github.com/orchetect/swift-osc`
+   - Version: Up to Next Major
+4. Select the `TascamBridge` scheme and build (⌘B).
 
-### 5. Set the OSC Port
+The project's deployment target is set to **macOS 14.0** in the target's
+General settings. Changing this lower will cause build failures on
+`@Observable`, `@Bindable`, and `MenuBarExtra`.
 
-The field at the top of the window shows the port TascamBridge listens
-on, default `5005`. This must match the port your OSC sender is
-configured to send to. Changing it takes effect immediately.
+### Sandbox / entitlements
 
-## Sending OSC Commands
+The app requires:
 
-TascamBridge accepts OSC messages addressed to a specific player,
-either by **position** or by **name**.
+- **App Sandbox** enabled
+- **Outgoing Connections (Client)** — for Telnet to the recorders
+- **Incoming Connections (Server)** — for the OSC UDP listener
 
-### Positional addressing
+For local development you can disable the sandbox entirely; the app runs
+fine unsigned in that configuration.
 
-`/player1/...` refers to the first card in the list.
-`/player2/...` refers to the second, and so on.
+## OSC Command Reference
 
-| Command | Effect |
-|---|---|
-| `/player1/play` | Start playback on the first player |
-| `/player2/stop` | Stop playback on the second player |
-| `/player3/track` with int argument `42` | Jump to track 42 |
+Every command is prefixed with a player identifier, either positional
+(`/playerN`) or by the player's assigned name.
 
-### Named addressing
+| Command | Arguments | Effect |
+|---|---|---|
+| `/player1/play` | — | Start playback on player 1 |
+| `/player1/stop` | — | Stop playback on player 1 |
+| `/player1/track` | integer | Jump to a specific track |
+| `/main/play` | — | Play on the player named "main" |
+| `/main/track` | integer | Track jump on the named player |
+| `/player1/012` | — | Raw passthrough to the SS-R250N |
 
-`/<name>/...` refers to whichever player has that name.
+Addresses are matched **case-insensitively**. `/MAIN/Play` and
+`/main/play` are equivalent. Player names are enforced as single words
+(no spaces, no `/`) and must be unique.
 
-If you rename the first player to `main`, then:
+## Configuration
 
-| Command | Effect |
-|---|---|
-| `/main/play` | Start playback |
-| `/main/stop` | Stop playback |
-| `/main/track` with int argument `42` | Jump to track 42 |
+All state is persisted to `UserDefaults` under the key
+`TascamBridge.PersistenceConfig.v1`. Deleting this key resets the app to
+defaults.
 
-### Case-insensitivity
+```
+defaults delete xorpereira.tascambridge TascamBridge.PersistenceConfig.v1
+```
 
-Addresses are matched in lowercase. `/MAIN/Play`, `/Main/play`, and
-`/main/play` all do the same thing.
+## Architecture
 
-### Argument types
+- `AppModel` — owns the player list, shared OSC listener, shared log,
+  persistence, and OSC routing
+- `PlayerModel` — one recorder; owns its Telnet connection, keep-alive,
+  auto-reconnect, and command dispatch
+- `TelnetClient` — TCP connection, login handshake, keep-alive timer
+- `OSCListener` — UDP listener using `Network.framework` for transport
+  and SwiftOSC for binary decoding
+- `TascamDevice` — protocol implemented per device
+  (`SS_R250N`, `HD_R1`) that builds the correct command bytes
+- `PersistenceConfig` / `PlayerConfig` — Codable snapshots
 
-The track number can be sent two ways:
+The UI is SwiftUI: a scrollable list of collapsible `PlayerCardView`
+instances, plus a shared log pane and a `MenuBarExtra` for quick access.
 
-- **As a typed argument**: send `/main/track` with an integer argument
-  of `42`. This is the recommended form and works directly from QLab.
-- **In the address**: send `/main/track/42`. Useful for quick tests or
-  senders that can't attach typed arguments.
+## Adding a New Device
 
-## Configuring QLab
+1. Create a new Swift file in `Protocols/` conforming to `TascamDevice`.
+2. Implement `displayName`, `loginString`, `play()`, `stop()`,
+   `selectTrack(_:)`, and `keepAlive()`.
+3. Add a case to `PlayerModel.DeviceType` pointing at the new type.
 
-1. In QLab, create a **Network cue**.
-2. Set the **destination** to `127.0.0.1` (or the IP of the machine
-   running TascamBridge, if it's on another Mac).
-3. Set the **port** to match TascamBridge's OSC port (default `5005`).
-4. Set the **message type** to `OSC Message`.
-5. Set the **address** to your target, e.g. `/main/play`.
-6. For track jumps, add an **integer argument** with the track number.
-
-## The Menu Bar
-
-The menu bar icon shows the aggregate state at a glance:
-
-- **Green** — every configured player is connected.
-- **Red** — at least one player is disconnected.
-
-Clicking the icon opens a menu with:
-
-- A connection summary (`2/3 connected`)
-- Per-player Play and Stop buttons
-- **Show Window** — bring the main window forward
-- **Quit**
-
-Per-player buttons are disabled when that player is disconnected.
-
-## The Log Pane
-
-The log shows everything happening in the app: connections,
-disconnections, OSC messages received, Telnet commands sent, and any
-errors. Entries are prefixed with the player name so you can tell
-multiple players apart.
-
-The log is the first place to look if something isn't working as
-expected.
-
-## Auto-Reconnect
-
-If a connection drops unexpectedly (network blip, recorder reboot),
-TascamBridge will attempt to reconnect automatically, waiting 2 seconds
-before the first attempt and doubling the wait each time up to 30
-seconds. When the recorder comes back online, the connection
-establishes and the retry counter resets.
-
-To intentionally break a connection, use the **Disconnect** button.
-That disables auto-reconnect for that player until you click Connect
-again.
-
-## Persistence
-
-Your player configuration — names, IPs, ports, device types, expanded
-state, and the OSC port — is saved automatically and restored the next
-time you launch TascamBridge. Connections are not persisted; every
-launch starts disconnected so you can review the setup before going
-live.
-
-## Troubleshooting
-
-**The status dot stays red after clicking Connect.**
-Check that the IP is correct and the recorder is powered on and on
-the same network. The log will show the specific error.
-
-**Commands are sent but the recorder does nothing.**
-Verify the device type is set correctly. An SS-R250N will not respond
-to HD-R1 commands and vice versa.
-
-**The connection drops after a few minutes of inactivity.**
-This shouldn't happen because of the built-in keep-alive, but if it
-does, check that the recorder's firmware is up to date. Older firmware
-on the SS-R250N had less reliable Telnet handling.
-
-**OSC commands arrive at the app but don't reach a player.**
-Check the log for `Unknown player in OSC`. This means the address
-referenced a player name that doesn't exist, or a `/playerN` where N
-is larger than the number of configured players.
-
-**A player's name won't save.**
-Names must be a single word with no spaces or slashes, and must be
-unique. The field turns red while typing if the current value is
-invalid.
-
-**The app doesn't restore my setup on launch.**
-Confirm the app has permission to write to `UserDefaults`. This is
-usually automatic; if it fails, the log will show a save error.
+No other changes are needed — routing, persistence, UI, and log all
+work generically.
 
 ## Known Limitations
 
-- **HD-R1 track selection**: The HD-R1 does not support direct
-  track-number jumps. Only play, stop, and folder/playlist navigation
-  are available for that device.
-- **OSC bundles with time tags**: Messages with a future time tag are
-  delivered immediately rather than at the specified time. If you need
-  scheduled execution, use QLab's own cue timing rather than OSC time
-  tags.
-- **Raw passthrough**: Any address segment not matching `play`, `stop`,
-  or `track` is forwarded verbatim to the recorder as a raw Telnet
-  command. This is useful for advanced commands but can produce
-  unexpected results if used carelessly.
-
-## Quick Reference
-
-| Task | Action |
-|---|---|
-| Play on first player | Send `/player1/play` |
-| Stop on first player | Send `/player1/stop` |
-| Play on player named "main" | Send `/main/play` |
-| Jump to track 42 | Send `/main/track` with integer `42` |
-| Test without QLab | `echo -n "/player1/play" | nc -u 127.0.0.1 5005` |
-| Change OSC port | Edit the field at the top of the window |
-| Add a player | Click **Add Player** |
-| Remove a player | Click the trash icon on its card |
-| Manually connect/disconnect | Buttons on the expanded card |
+- OSC bundles with time tags are decoded but not scheduled; messages
+  execute immediately on arrival.
+- The HD-R1 does not support direct track-number selection; only
+  transport, folder, and playlist commands are exposed.
+- Track numbering for the SS-R250N uses the TASCAM-specified digit
+  order (tens, ones, thousands, hundreds).
 
 ## License
 
 Copyright (C) 2026 Frederico Pereira
 
-TascamBridge is free software released under the **GNU Affero General
-Public License v3.0**. You are welcome to use it, modify it, and share
-it, provided derivative works are released under the same license. If
-you run a modified version as a network service, you must make the
-source available to users of that service.
+This program is free software: you can redistribute it and/or modify it
+under the terms of the **GNU Affero General Public License** as published
+by the Free Software Foundation, either version 3 of the License, or (at
+your option) any later version.
 
-Full license text: https://www.gnu.org/licenses/agpl-3.0.html
+This program is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU Affero
+General Public License for more details.
 
-Source code: https://github.com/Xorpereira/TascamBridge
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+### What AGPL means for this project
+
+The AGPL is a strong copyleft license. In practical terms:
+
+- You are free to use, modify, and distribute this software.
+- If you distribute a modified version, you must release the source under
+  the same license.
+- **Network use counts as distribution**: if you run a modified version
+  as a network service that others interact with, you must offer them the
+  corresponding source code.
+
+The full license text should be included in a `LICENSE` file at the root
+of the repository.
+
+## Acknowledgements
+
+Built with [SwiftOSC](https://github.com/orchetect/swift-osc).
+Protocol details from TASCAM's published RS-232C/Telnet documentation.
