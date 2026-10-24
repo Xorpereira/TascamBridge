@@ -35,7 +35,7 @@ struct ContentView: View {
                     .frame(width: 80)
                 Spacer()
                 Text(app.connectionSummary)
-                    .foregroundStyle(app.allConnected ? .green : .secondary)
+                    .foregroundStyle(app.allConnected ? Color.green : Color.secondary)
                     .font(.headline)
                 Button("Add Player") { app.addPlayer() }
                     .buttonStyle(.borderedProminent)
@@ -57,16 +57,25 @@ struct ContentView: View {
             Divider()
 
             GroupBox("Log") {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        ForEach(app.logEntries, id: \.self) { entry in
-                            Text(entry)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(alignment: .leading, spacing: 2) {
+                            ForEach(Array(app.logEntries.enumerated()), id: \.offset) { index, entry in
+                                Text(entry)
+                                    .font(.system(.caption, design: .monospaced))
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .id(index)
+                            }
+                        }
+                        .padding(4)
+                    }
+                    .onChange(of: app.logEntries.count) { _, _ in
+                        guard let lastIndex = app.logEntries.indices.last else { return }
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            proxy.scrollTo(lastIndex, anchor: .bottom)
                         }
                     }
-                    .padding(4)
                 }
                 .frame(minHeight: 140)
             }
