@@ -31,12 +31,14 @@ final class TelnetClient {
     // Command pacing
     private let sendQueue = DispatchQueue(label: "telnet.send.queue")
     private var lastSendTime: Date = .distantPast
-    private let minimumCommandInterval: TimeInterval = 0.06 // 60ms
+    private var lastCommand: String = ""
+    private let minimumCommandInterval: TimeInterval = 0.06   // 60ms between any two commands
+    private let trackToPlayInterval: TimeInterval = 0.3       // extra wait after a track command
 
     // Keep-alive
     private var keepAliveTimer: DispatchSourceTimer?
     private var keepAliveCommand: String = ""
-    private let keepAliveInterval: TimeInterval = 120 // increased from 90s
+    private let keepAliveInterval: TimeInterval = 120
 
     var isConnected = false
     var logMessage: ((String) -> Void)?
@@ -118,7 +120,7 @@ final class TelnetClient {
         timer.schedule(deadline: .now() + keepAliveInterval, repeating: keepAliveInterval)
         timer.setEventHandler { [weak self] in
             guard let self = self, self.isConnected else { return }
-            self.sendCommandInternal(self.keepAliveCommand, isKeepAlive: true)
+            self.sendRaw("\(self.keepAliveCommand)\r\n")
             self.logMessage?("Keep-alive sent (\(self.keepAliveCommand))")
         }
         timer.resume()
@@ -132,7 +134,6 @@ final class TelnetClient {
         keepAliveTimer = nil
     }
 
-    /// Resets the keep-alive timer's deadline to now + interval.
     private func resetKeepAlive() {
         guard keepAliveTimer != nil else { return }
         keepAliveTimer?.schedule(deadline: .now() + keepAliveInterval, repeating: keepAliveInterval)
@@ -140,7 +141,6 @@ final class TelnetClient {
 
     // MARK: - Send (paced)
 
-    /// Public entry point. Enforces minimum spacing between commands.
     func sendCommand(_ command: String) {
         guard isConnected else {
             logMessage?("Cannot send — not connected")
@@ -150,28 +150,35 @@ final class TelnetClient {
         sendQueue.async { [weak self] in
             guard let self = self else { return }
 
+            // Determine required gap before this command
+            let gap = self.requiredGap(before: command)
+
             let now = Date()
             let elapsed = now.timeIntervalSince(self.lastSendTime)
-
-            if elapsed < self.minimumCommandInterval {
-                let wait = self.minimumCommandInterval - elapsed
+            if elapsed < gap {
+                let wait = gap - elapsed
                 Thread.sleep(forTimeInterval: wait)
             }
 
             self.lastSendTime = Date()
+            self.lastCommand = command
             self.sendRaw("\(command)\r\n")
             self.logMessage?("Sent: \(command)")
 
-            // Any valid command resets the keep-alive timer
             DispatchQueue.main.async {
                 self.resetKeepAlive()
             }
         }
     }
 
-    /// Internal send that bypasses pacing (used for keep-alive, which is already sparse).
-    private func sendCommandInternal(_ command: String, isKeepAlive: Bool) {
-        sendRaw("\(command)\r\n")
+    /// Returns the minimum gap required before sending `command`,
+    /// based on the previously sent command.
+    private func requiredGap(before command: String) -> TimeInterval {
+        // After a track selection, play needs extra time for the device to finish seeking.
+        if lastCommand.hasPrefix("023") && command == "012" {
+            return trackToPlayInterval
+        }
+        return minimumCommandInterval
     }
 
     private func sendRaw(_ string: String) {
