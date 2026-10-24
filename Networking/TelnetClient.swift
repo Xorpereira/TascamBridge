@@ -28,14 +28,18 @@ final class TelnetClient {
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "telnet.client.queue")
 
+    // Command pacing
+    private let sendQueue = DispatchQueue(label: "telnet.send.queue")
+    private var lastSendTime: Date = .distantPast
+    private let minimumCommandInterval: TimeInterval = 0.06 // 60ms
+
+    // Keep-alive
     private var keepAliveTimer: DispatchSourceTimer?
     private var keepAliveCommand: String = ""
+    private let keepAliveInterval: TimeInterval = 120 // increased from 90s
 
     var isConnected = false
     var logMessage: ((String) -> Void)?
-
-    /// Called when the TCP connection drops unexpectedly (not via disconnect()).
-    /// Used by PlayerModel to trigger auto-reconnect.
     var onConnectionDropped: (() -> Void)?
 
     // MARK: - Connect
@@ -80,7 +84,6 @@ final class TelnetClient {
                 self?.logMessage?("Connection cancelled")
                 self?.isConnected = false
                 self?.stopKeepAlive()
-                // No onConnectionDropped here — cancel is what disconnect() triggers.
 
             default:
                 break
@@ -112,16 +115,16 @@ final class TelnetClient {
         }
 
         let timer = DispatchSource.makeTimerSource(queue: queue)
-        timer.schedule(deadline: .now() + 90, repeating: 90)
+        timer.schedule(deadline: .now() + keepAliveInterval, repeating: keepAliveInterval)
         timer.setEventHandler { [weak self] in
             guard let self = self, self.isConnected else { return }
-            self.sendCommand(self.keepAliveCommand)
+            self.sendCommandInternal(self.keepAliveCommand, isKeepAlive: true)
             self.logMessage?("Keep-alive sent (\(self.keepAliveCommand))")
         }
         timer.resume()
         keepAliveTimer = timer
 
-        logMessage?("Keep-alive started (every 90s, command: \(keepAliveCommand))")
+        logMessage?("Keep-alive started (every \(Int(keepAliveInterval))s, command: \(keepAliveCommand))")
     }
 
     private func stopKeepAlive() {
@@ -129,16 +132,46 @@ final class TelnetClient {
         keepAliveTimer = nil
     }
 
-    // MARK: - Send
+    /// Resets the keep-alive timer's deadline to now + interval.
+    private func resetKeepAlive() {
+        guard keepAliveTimer != nil else { return }
+        keepAliveTimer?.schedule(deadline: .now() + keepAliveInterval, repeating: keepAliveInterval)
+    }
 
+    // MARK: - Send (paced)
+
+    /// Public entry point. Enforces minimum spacing between commands.
     func sendCommand(_ command: String) {
         guard isConnected else {
             logMessage?("Cannot send — not connected")
             return
         }
-        let framed = command + "\r\n"
-        sendRaw(framed)
-        logMessage?("Sent: \(command)")
+
+        sendQueue.async { [weak self] in
+            guard let self = self else { return }
+
+            let now = Date()
+            let elapsed = now.timeIntervalSince(self.lastSendTime)
+
+            if elapsed < self.minimumCommandInterval {
+                let wait = self.minimumCommandInterval - elapsed
+                Thread.sleep(forTimeInterval: wait)
+            }
+
+            self.lastSendTime = Date()
+            self.sendRaw("\(command)\r\n")
+            self.logMessage?("Sent: \(command)")
+
+            // Any valid command resets the keep-alive timer
+            DispatchQueue.main.async {
+                self.resetKeepAlive()
+            }
+        }
+    }
+
+    /// Internal send that bypasses pacing (used for keep-alive, which is already sparse).
+    private func sendCommandInternal(_ command: String, isKeepAlive: Bool) {
+        sendRaw("\(command)\r\n")
     }
 
     private func sendRaw(_ string: String) {
