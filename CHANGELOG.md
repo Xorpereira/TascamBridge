@@ -13,6 +13,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Optional per-player keyboard shortcuts for Play/Stop
 - Show-file presets for different venues
 
+## [1.2] - 2026-10-31
+
+### Added
+
+- **Local IP display** in the main window, next to the OSC port field.
+  Useful when the OSC sender (QLab, Resolume, TouchOSC) runs on a different
+  device on the network and needs to know where to send commands.
+- **Configurable Track→Play delay** as a slider in the main window
+  (0.20s–1.00s, step 0.05s, default 0.50s). Applies to all players and is
+  persisted across launches.
+
+### Changed
+
+- Track→Play delay is now user-adjustable instead of a fixed 300ms constant.
+  The fixed value worked for most track jumps but occasionally failed when
+  the SS-R250N needed longer to finish seeking. Users can now tune the delay
+  to their hardware and content without rebuilding the app.
+- Default Track→Play delay increased from 0.30s to 0.50s to reduce the
+  chance of dropped play commands out of the box.
+
+### Fixed
+
+- SS-R250N occasionally not starting playback after a track selection when
+  the seek took longer than 300ms.
+
 ## [1.1] - 2026-10-24
 
 ### Added
@@ -62,6 +87,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Collapsible player cards in the main window.
 - Per-player Play/Stop buttons in both the main window and the menu bar.
 
-[Unreleased]: https://github.com/Xorpereira/TascamBridge/compare/v1.1...HEAD
+[Unreleased]: https://github.com/Xorpereira/TascamBridge/compare/v1.2...HEAD
+[1.2]: https://github.com/Xorpereira/TascamBridge/compare/v1.1...v1.2
 [1.1]: https://github.com/Xorpereira/TascamBridge/compare/v1.0...v1.1
 [1.0]: https://github.com/Xorpereira/TascamBridge/releases/tag/v1.0
