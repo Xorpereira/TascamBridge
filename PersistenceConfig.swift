@@ -22,27 +22,24 @@
 
 import Foundation
 
-/// Snapshot of the app's persisted state.
 struct PersistenceConfig: Codable {
     var oscPort: String
     var players: [PlayerConfig]
+    var trackToPlayDelay: Double?
 
     static let defaultsKey = "TascamBridge.PersistenceConfig.v1"
 
     static let `default` = PersistenceConfig(
         oscPort: "5005",
-        players: []
+        players: [],
+        trackToPlayDelay: 0.5
     )
 }
 
-/// Snapshot of a single player's configuration.
 struct PlayerConfig: Codable {
     var name: String
-    var deviceType: String      // rawValue of PlayerModel.DeviceType
+    var deviceType: String
     var deviceIP: String
     var devicePort: String
     var isExpanded: Bool
-
-    // Note: we deliberately do NOT persist `statusText` or the TCP connection.
-    // On launch, all players start disconnected.
 }
