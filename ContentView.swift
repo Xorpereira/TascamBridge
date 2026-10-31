@@ -25,6 +25,8 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var app: AppModel
 
+    private let localIP = NetworkInfo.localIPv4Address()
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
 
@@ -33,10 +35,35 @@ struct ContentView: View {
                 TextField("5005", text: $app.oscPort)
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 80)
+
                 Spacer()
+
+                if let ip = localIP {
+                    Text("Local IP:")
+                        .foregroundStyle(.secondary)
+                    Text(ip)
+                        .font(.system(.body, design: .monospaced))
+                        .textSelection(.enabled)
+                } else {
+                    Text("Local IP: unavailable")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                Text("Track→Play delay:")
+                Slider(value: $app.trackToPlayDelay, in: 0.2...1.0, step: 0.05)
+                    .frame(width: 200)
+                Text(String(format: "%.2fs", app.trackToPlayDelay))
+                    .font(.system(.body, design: .monospaced))
+                    .frame(width: 60, alignment: .leading)
+
+                Spacer()
+
                 Text(app.connectionSummary)
                     .foregroundStyle(app.allConnected ? Color.green : Color.secondary)
                     .font(.headline)
+
                 Button("Add Player") { app.addPlayer() }
                     .buttonStyle(.borderedProminent)
             }
@@ -81,6 +108,6 @@ struct ContentView: View {
             }
         }
         .padding()
-        .frame(minWidth: 560, minHeight: 620)
+        .frame(minWidth: 600, minHeight: 660)
     }
 }
