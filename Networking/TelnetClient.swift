@@ -32,8 +32,8 @@ final class TelnetClient {
     private let sendQueue = DispatchQueue(label: "telnet.send.queue")
     private var lastSendTime: Date = .distantPast
     private var lastCommand: String = ""
-    private let minimumCommandInterval: TimeInterval = 0.06   // 60ms between any two commands
-    private let trackToPlayInterval: TimeInterval = 0.3       // extra wait after a track command
+    private let minimumCommandInterval: TimeInterval = 0.06
+    private var trackToPlayInterval: TimeInterval = 0.5
 
     // Keep-alive
     private var keepAliveTimer: DispatchSourceTimer?
@@ -46,10 +46,17 @@ final class TelnetClient {
 
     // MARK: - Connect
 
-    func connect(host: String, port: UInt16, loginString: String?, keepAliveCommand: String) {
+    func connect(
+        host: String,
+        port: UInt16,
+        loginString: String?,
+        keepAliveCommand: String,
+        trackToPlayDelay: Double
+    ) {
         disconnect()
 
         self.keepAliveCommand = keepAliveCommand
+        self.trackToPlayInterval = trackToPlayDelay
 
         let nwHost = NWEndpoint.Host(host)
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
@@ -150,7 +157,6 @@ final class TelnetClient {
         sendQueue.async { [weak self] in
             guard let self = self else { return }
 
-            // Determine required gap before this command
             let gap = self.requiredGap(before: command)
 
             let now = Date()
@@ -171,10 +177,8 @@ final class TelnetClient {
         }
     }
 
-    /// Returns the minimum gap required before sending `command`,
-    /// based on the previously sent command.
+    /// After a track selection, `play` needs extra time for the device to finish seeking.
     private func requiredGap(before command: String) -> TimeInterval {
-        // After a track selection, play needs extra time for the device to finish seeking.
         if lastCommand.hasPrefix("023") && command == "012" {
             return trackToPlayInterval
         }
