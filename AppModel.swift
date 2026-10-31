@@ -41,6 +41,15 @@ final class AppModel {
     }
     private let osc = OSCListener()
 
+    // MARK: - Timing
+
+    var trackToPlayDelay: Double = 0.5 {
+        didSet {
+            propagateTimingToPlayers()
+            saveState()
+        }
+    }
+
     // MARK: - Shared Log
 
     var logEntries: [String] = []
@@ -67,12 +76,13 @@ final class AppModel {
     init() {
         if let saved = Self.loadState() {
             oscPort = saved.oscPort
+            trackToPlayDelay = saved.trackToPlayDelay ?? 0.5
+
             for config in saved.players {
                 let player = makePlayer(from: config)
                 players.append(player)
             }
 
-            // Advance nextPlayerNumber past any existing "playerN" names
             let maxN = saved.players.compactMap { cfg -> Int? in
                 guard cfg.name.hasPrefix("player") else { return nil }
                 return Int(cfg.name.dropFirst("player".count))
@@ -113,14 +123,12 @@ final class AppModel {
         saveState()
     }
 
-    /// Creates a fresh player wired into the shared log and persistence.
     private func makePlayer(named name: String) -> PlayerModel {
         let player = PlayerModel(name: name)
         wire(player)
         return player
     }
 
-    /// Rebuilds a player from a persisted config.
     private func makePlayer(from config: PlayerConfig) -> PlayerModel {
         let player = PlayerModel(name: config.name)
         if let type = PlayerModel.DeviceType(rawValue: config.deviceType) {
@@ -133,8 +141,8 @@ final class AppModel {
         return player
     }
 
-    /// Shared setup for both fresh and restored players.
     private func wire(_ player: PlayerModel) {
+        player.trackToPlayDelay = trackToPlayDelay
         player.logMessage = { [weak self] msg in
             DispatchQueue.main.async {
                 self?.appendLog(msg)
@@ -142,6 +150,12 @@ final class AppModel {
         }
         player.onPersistableChange = { [weak self] in
             self?.saveState()
+        }
+    }
+
+    private func propagateTimingToPlayers() {
+        for player in players {
+            player.trackToPlayDelay = trackToPlayDelay
         }
     }
 
@@ -266,7 +280,8 @@ final class AppModel {
                     devicePort: player.devicePort,
                     isExpanded: player.isExpanded
                 )
-            }
+            },
+            trackToPlayDelay: trackToPlayDelay
         )
         do {
             let data = try JSONEncoder().encode(config)
