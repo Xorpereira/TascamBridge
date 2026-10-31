@@ -75,14 +75,14 @@ final class PlayerModel: Identifiable {
         statusText == "Connected"
     }
 
+    /// Set by AppModel; controls the extra wait between track select and play.
+    var trackToPlayDelay: Double = 0.5
+
     // MARK: - Services
 
     private let telnet = TelnetClient()
 
-    /// Set by AppModel so this player can push to the shared log.
     var logMessage: ((String) -> Void)?
-
-    /// Set by AppModel so this player can notify it of persistable field changes.
     var onPersistableChange: (() -> Void)?
 
     // MARK: - Auto-reconnect state
@@ -103,7 +103,6 @@ final class PlayerModel: Identifiable {
                 self.logMessage?("[\(self.name)] \(msg)")
                 self.statusText = self.telnet.isConnected ? "Connected" : "Disconnected"
                 if !wasConnected && self.statusText == "Connected" {
-                    // Successful (re)connect — reset backoff
                     self.reconnectAttempt = 0
                 }
             }
@@ -132,7 +131,8 @@ final class PlayerModel: Identifiable {
             host: deviceIP,
             port: port,
             loginString: device.loginString,
-            keepAliveCommand: device.keepAlive()
+            keepAliveCommand: device.keepAlive(),
+            trackToPlayDelay: trackToPlayDelay
         )
     }
 
